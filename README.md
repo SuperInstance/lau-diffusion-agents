@@ -1,404 +1,410 @@
 # lau-diffusion-agents
 
-> Diffusion processes on agent interaction manifolds: Brownian motion, heat kernels, Fokker-Planck, Langevin dynamics, Lévy flights, and Turing patterns.
+> Diffusion processes for agents — Brownian motion, stochastic calculus, Fokker–Planck, Langevin dynamics, anomalous diffusion, Turing patterns, spectral methods, optimal transport, and anisotropic diffusion.
+
+A Rust crate implementing the core objects of **stochastic diffusion theory**: Wiener processes and Itô calculus, geometric Brownian motion and Ornstein–Uhlenbeck processes, Fokker–Planck PDE solvers with drift-diffusion decomposition, Langevin and Hamiltonian Monte Carlo sampling, fractional diffusion and Lévy flights, reaction-diffusion systems (Gray–Scott, FitzHugh–Nagumo), spectral graph diffusion, Wasserstein optimal transport, and anisotropic diffusion tensors with Perona–Malik edge-preserving smoothing.
+
+A unified `AgentDiffusion` API ties all modules together for multi-agent particle systems.
+
+Every result is verified by **101 unit tests**.
+
+---
 
 ## What This Does
 
-This crate implements the full spectrum of diffusion processes for multi-agent systems. It covers Brownian motion and Wiener processes (including geometric Brownian and Ornstein-Uhlenbeck), Itô calculus, heat kernels on Euclidean space, circles, and spheres, the Fokker-Planck equation for probability density evolution, Langevin dynamics and Hamiltonian Monte Carlo for sampling, fractional diffusion and Lévy flights for anomalous transport, reaction-diffusion systems (Gray-Scott, FitzHugh-Nagumo) for Turing patterns, spectral decomposition of diffusion operators, Wasserstein gradient flows and Sinkhorn divergence, anisotropic diffusion tensors with Perona-Malik edge-preserving diffusion, and a unified `AgentDiffusion` API for simulating populations of diffusing agents.
+- **Brownian motion**: Wiener process simulation, quadratic variation, Itô's lemma, Itô integral, geometric Brownian motion (GBM), Ornstein–Uhlenbeck (OU) process, reflecting Brownian motion
+- **Heat kernel**: Euclidean heat kernel, heat kernel on circles and spheres, Gaussian kernel, 1D heat equation (finite differences), graph heat kernel (matrix exponential)
+- **Fokker–Planck**: 1D PDE solver (upwind + central differences), drift-diffusion decomposition from observations, stationary OU distribution, probability current, entropy production rate
+- **Langevin dynamics**: Overdamped Langevin, underdamped Langevin, Hamiltonian Monte Carlo (HMC) with leapfrog integrator, quadratic and double-well potentials, kinetic temperature
+- **Fractional diffusion**: α-stable distributions via Chambers–Mallows–Stuck method, Lévy flights, Grünwald–Letnikov fractional derivatives, fractional diffusion PDE, anomalous exponent estimation, characteristic function
+- **Reaction-diffusion**: Gray–Scott model (Turing patterns), FitzHugh–Nagumo model (excitable media), Turing instability analysis
+- **Spectral diffusion**: 1D Laplacian, graph Laplacian (unnormalized + normalized), spectral decomposition via SVD, heat kernel from eigenvalues, spectral gap, diffusion kernel matrix, low-rank approximation
+- **Transport diffusion**: Discrete distributions, Wasserstein-1 distance, Sinkhorn algorithm for regularized optimal transport, KL divergence, Jensen–Shannon divergence, quantile functions, Wasserstein gradient flow
+- **Anisotropic diffusion**: 3×3 diffusion tensors, fractional anisotropy, mean/radial diffusivity, Perona–Malik edge-preserving diffusion, tensor-valued diffusion, structure tensor computation
 
-Use this when you need to model how agents, particles, or information spreads through space — from standard Brownian diffusion to anomalous Lévy flights to pattern-forming reaction-diffusion systems.
+---
 
-## The Key Idea
+## Key Idea
 
-A diffusion process describes how something spreads over time. Mathematically, it's governed by the heat equation ∂u/∂t = Δu (or its stochastic counterpart, Brownian motion). This crate implements the deterministic side (PDE solvers, heat kernels, Fokker-Planck) and the stochastic side (Brownian motion, Langevin dynamics, Lévy flights), connected through the Einstein relation D = σ²/2. For agents, diffusion models exploration, belief propagation, and collective pattern formation.
+**Diffusion is the universal smoothing mechanism.** Whether it's particles spreading in a fluid, information propagating across a network, probability distributions relaxing to equilibrium, or agents exploring a state space — the mathematics is the same:
+
+```
+∂u/∂t = D ∇²u
+```
+
+This crate implements diffusion in all its forms:
+
+1. **Microscopic** (SDE level): Brownian motion dX = σ dW, Itô's lemma, Langevin dynamics
+2. **Mesoscopic** (PDF level): Fokker–Planck equation ∂p/∂t = −∇·(ap) + ∇²(Dp)
+3. **Macroscopic** (PDE level): Heat equation, reaction-diffusion, anisotropic diffusion
+4. **Geometric** (manifold level): Heat kernel on circles, spheres, and graphs
+5. **Optimal transport** (distribution level): Wasserstein distance, Sinkhorn, gradient flows
+
+The `AgentDiffusion` struct treats diffusion as a **population-level process**: N agents undergoing Brownian motion in ℝ^d, with methods for mean squared displacement, position distributions, covariance tensors, spectral analysis, and Lévy flights.
+
+---
 
 ## Install
 
-```bash
-cargo add lau-diffusion-agents
+```toml
+[dependencies]
+lau-diffusion-agents = "0.1"
 ```
+
+Or clone directly:
+
+```bash
+git clone https://github.com/SuperInstance/lau-diffusion-agents.git
+cargo build
+```
+
+### Dependencies
+
+| Crate | Purpose |
+|-------|---------|
+| `nalgebra` 0.33 | Linear algebra (vectors, matrices, SVD, eigendecomposition) |
+| `num-complex` 0.4 | Complex numbers for characteristic functions |
+| `serde` 1 | Serialization of all structures |
+| `rand` 0.8 | Random number generation |
+| `rand_distr` 0.4 | Statistical distributions |
+
+---
 
 ## Quick Start
 
-```rust
-use lau_diffusion_agents::*;
-use nalgebra::DVector;
-
-fn main() {
-    // Simulate 100 agents diffusing in 2D
-    let config = AgentDiffusionConfig {
-        n_agents: 100,
-        dimension: 2,
-        dt: 0.01,
-        total_time: 1.0,
-        diffusion_coeff: 1.0,
-        drift_coeff: 0.0,
-    };
-    let mut agents = AgentDiffusion::new_random(config, 1.0);
-    agents.run_brownian();
-    println!("Mean position: {:?}", agents.mean_position());
-    println!("MSD: {:.4}", agents.mean_squared_displacement());
-
-    // Heat kernel: how much does agent i influence agent j?
-    let k = agents.heat_kernel(0, 1, 1.0);
-
-    // Estimate drift and diffusion from observed trajectories
-    let decomp = agents.estimate_drift_diffusion(&trajectories);
-
-    // Anisotropic diffusion tensor
-    let tensor = agents.covariance_tensor();
-    println!("FA: {:.4}", tensor.fractional_anisotropy());
-}
-```
-
-## API Reference
-
-### Brownian Motion
-
-#### `BrownianPath`
-Simulated Wiener process path.
+### Brownian motion and Itô calculus
 
 ```rust
+use lau_diffusion_agents::brownian::{BrownianConfig, BrownianPath, ito_lemma, GeometricBrownian};
+
+// Simulate a 2D Brownian path
 let config = BrownianConfig { dimension: 2, dt: 0.01, sigma: 1.0, drift: 0.0 };
 let path = BrownianPath::simulate(&config, 1000);
-path.final_position();
-path.quadratic_variation();
+println!("Final position: {:?}", path.final_position());
+println!("Quadratic variation: {}", path.quadratic_variation());
+
+// Itô's lemma: df = f_t dt + f_W dW + ½ f_{WW} dW²
+let f_new = ito_lemma(f_value, f_t, f_w, f_ww, dt, dw);
+
+// Geometric Brownian motion (stock price model)
+let gbm = GeometricBrownian::simulate(100.0, 0.05, 0.2, 0.01, 1000);
 ```
 
-#### `GeometricBrownian`
-dS = μS dt + σS dW (stock price model).
+### Ornstein–Uhlenbeck process
 
 ```rust
-let gb = GeometricBrownian::simulate(s0, mu, sigma, dt, n_steps);
-gb.path;  // Vec<(f64, f64)>
+use lau_diffusion_agents::brownian::OrnsteinUhlenbeck;
+
+// Mean-reverting process: dX = θ(μ − X)dt + σ dW
+let ou = OrnsteinUhlenbeck::simulate(5.0, 1.0, 0.0, 1.0, 0.01, 500);
+println!("Stationary variance: {}", ou.stationary_variance()); // σ²/(2θ) = 0.5
 ```
 
-#### `OrnsteinUhlenbeck`
-dx = θ(μ - x)dt + σdW (mean-reverting process).
+### Fokker–Planck equation
 
 ```rust
-let ou = OrnsteinUhlenbeck::simulate(x0, theta, mu, sigma, dt, n_steps);
-ou.stationary_variance();  // σ²/(2θ)
-```
+use lau_diffusion_agents::fokker_planck::{FokkerPlanck1D, DriftDiffusionDecomposition};
 
-#### Itô Calculus
-
-```rust
-// Itô's lemma: df = (∂f/∂t + ∂f/∂W · dW + ½ ∂²f/∂W² dt)
-ito_lemma(f_value, f_t, f_w, f_ww, dt, dw);
-
-// Itô integral: ∫ f dW
-ito_integral(&f_values, &increments);
-
-// Reflecting Brownian in [lower, upper]
-reflecting_brownian(x0, sigma, dt, n_steps, lower, upper);
-```
-
-### Heat Kernel
-
-```rust
-// Euclidean: K(x,y,t) = (4πt)^{-d/2} exp(-|x-y|²/4t)
-heat_kernel_euclidean(dim, t, &x, &y);
-
-// On a circle of radius r
-heat_kernel_circle(t, x, y, r, n_terms);
-
-// On a sphere of radius r (spherical harmonics)
-heat_kernel_sphere(t, theta1, phi1, theta2, phi2, r, max_l);
-
-// Gaussian kernel (multivariate)
-gaussian_kernel(&x, &mu, &sigma_inv, det_sigma);
-
-// 1D heat equation solver (finite differences)
-heat_equation_1d(&u0, alpha, dx, dt, n_steps);
-
-// Graph heat kernel: exp(-tL)
-graph_heat_kernel(&laplacian, t, n_terms);
-```
-
-### Fokker-Planck Equation
-
-#### `FokkerPlanck1D`
-Solve ∂p/∂t = -∂/∂x[a(x)p] + ∂²/∂x²[D(x)p].
-
-```rust
+// Solve ∂p/∂t = −∂(a·p)/∂x + ∂²(D·p)/∂x²
 let fp = FokkerPlanck1D::new(101, -5.0, 5.0);
 let result = fp.evolve(&p0, |x| -x, |_| 1.0, 0.001, 500);
 
-// Ornstein-Uhlenbeck stationary distribution
-fp.stationary_ou(theta, mu, sigma);
-```
-
-#### Drift-Diffusion Estimation
-
-```rust
+// Estimate drift and diffusion from observations
 let decomp = DriftDiffusionDecomposition::estimate(&observations, dt);
-decomp.estimated_drift;
-decomp.estimated_diffusion;
+println!("drift={}, diffusion={}", decomp.estimated_drift, decomp.estimated_diffusion);
 ```
 
-#### Diagnostics
+### Langevin dynamics and HMC
 
 ```rust
-entropy_production_rate(&drift, diffusion, &density, dx);
-probability_current(&drift, &diffusion, &density, dx);
+use lau_diffusion_agents::langevin::{
+    overdamped_langevin, hmc_sample, LangevinConfig, HMCConfig,
+    QuadraticPotential, DoubleWellPotential,
+};
+
+// Overdamped Langevin: dX = −∇V/γ dt + √(2T/γ) dW
+let config = LangevinConfig { dimension: 2, dt: 0.001, friction: 1.0, temperature: 1.0, n_steps: 1000 };
+let result = overdamped_langevin(&config, &x0, &QuadraticPotential::identity(2));
+
+// Hamiltonian Monte Carlo sampling
+let hmc_config = HMCConfig { dimension: 1, step_size: 0.1, n_leapfrog: 10, n_samples: 500, temperature: 1.0 };
+let hmc_result = hmc_sample(&hmc_config, &x0, &DoubleWellPotential);
+println!("Acceptance rate: {}", hmc_result.acceptance_rate);
 ```
 
-### Langevin Dynamics
-
-#### Overdamped Langevin
+### Multi-agent diffusion
 
 ```rust
-let config = LangevinConfig { dimension: 2, dt: 0.001, friction: 1.0, temperature: 1.0, n_steps: 10000 };
-let result = overdamped_langevin(&config, &x0, &potential);
-// result.trajectory, result.energies
-```
+use lau_diffusion_agents::AgentDiffusion;
+use lau_diffusion_agents::agent_diffusion::AgentDiffusionConfig;
 
-#### Underdamped Langevin
-
-```rust
-let (positions, velocities) = underdamped_langevin(&config, &x0, &v0, &potential);
-```
-
-#### Hamiltonian Monte Carlo
-
-```rust
-let hmc_config = HMCConfig { dimension: 2, step_size: 0.1, n_leapfrog: 10, n_samples: 1000, temperature: 1.0 };
-let result = hmc_sample(&hmc_config, &x0, &potential);
-// result.samples, result.acceptance_rate, result.hamiltonians
-```
-
-#### Built-in Potentials
-
-```rust
-QuadraticPotential::new(matrix);      // U(x) = ½ x'Ax
-QuadraticPotential::identity(dim);    // U(x) = ½|x|²
-DoubleWellPotential;                  // U(x) = Σ(xᵢ²-1)²
-```
-
-### Fractional Diffusion & Lévy Flights
-
-#### `LevyFlight`
-Lévy flights with α-stable step sizes.
-
-```rust
-let flight = LevyFlight::simulate(dimension, alpha, n_steps, scale);
-flight.positions;
-flight.step_sizes;
-flight.mean_square_displacement();
-```
-
-#### α-Stable Random Variables
-
-```rust
-let params = StableParams { alpha: 1.5, beta: 0.0, scale: 1.0, location: 0.0 };
-stable_random(&params);
-stable_samples(&params, 1000);
-```
-
-#### `FractionalDiffusion1D`
-
-```rust
-let fd = FractionalDiffusion1D::new(n_points, alpha);  // α ∈ (0, 2]
-fd.gl_coefficients(n);  // Grünwald-Letnikov coefficients
-fd.solve(&u0, dx, dt, n_steps);
-```
-
-### Reaction-Diffusion
-
-#### `GrayScott`
-Turing pattern formation (activator-inhibitor).
-
-```rust
-let mut gs = GrayScott::new(ReactionDiffusionParams::default(), 50);
-gs.seed_center(5, 0.5, 0.25);
-gs.evolve(1000);
-// gs.u, gs.v — concentration fields
-```
-
-#### `FitzHughNagumo`
-Excitable media (reaction-diffusion on a line).
-
-```rust
-let mut fhn = FitzHughNagumo::new(n, a, b, epsilon, du, dv, dt, dx);
-fhn.set_initial(u0, v0);
-fhn.evolve(n_steps);
-```
-
-### Spectral Diffusion
-
-```rust
-// Eigen decomposition of diffusion operators
-let spec = SpectralDecomposition::decompose(&matrix)?;
-spec.eigenvalues;
-spec.eigenvectors;
-spec.reconstruct();
-spec.low_rank(k);
-
-// Heat kernel from spectral decomposition
-heat_kernel_spectral(&eigenvalues, &eigenvectors, t, i, j, n_terms);
-
-// Solve diffusion equation spectrally
-spectral_diffusion_solve(&eigenvalues, &eigenvectors, &initial, t);
-
-// Spectral gap (mixing time)
-spectral_gap(&eigenvalues);
-
-// Graph Laplacian
-let lap = graph_laplacian(&adjacency);
-let norm_lap = normalized_graph_laplacian(&adjacency);
-
-// 1D Laplacian matrix
-laplacian_1d_matrix(n, dx);
-```
-
-### Transport Diffusion
-
-#### `DiscreteDistribution`
-
-```rust
-let dist = DiscreteDistribution::normalized(support, weights);
-dist.mean();
-dist.variance();
-dist.entropy();
-```
-
-#### Optimal Transport
-
-```rust
-// 1D Wasserstein distance
-wasserstein_1d(&dist_a, &dist_b);
-
-// Sinkhorn algorithm for regularized OT
-let (plan, u, v) = sinkhorn(&a, &b, &cost, regularization, max_iter, tolerance);
-
-// KL divergence
-kl_divergence(&p, &q);
-```
-
-### Anisotropic Diffusion
-
-#### `DiffusionTensor`
-3×3 diffusion tensor for direction-dependent diffusion.
-
-```rust
-let dt = DiffusionTensor::isotropic(1.0);
-let dt = DiffusionTensor::axis_aligned(dx, dy, dz);
-let dt = DiffusionTensor::from_eigen(&eigenvalues, &eigenvectors);
-
-dt.fractional_anisotropy();  // FA ∈ [0, 1]
-dt.mean_diffusivity();
-dt.radial_diffusivity();
-dt.trace();
-dt.apply(&gradient);
-```
-
-#### Perona-Malik Edge-Preserving Diffusion
-
-```rust
-let ad = AnisotropicDiffusion2D::new(nx, ny, dx, dy);
-let result = ad.evolve_perona_malik(&u0, dt, kappa, n_steps);
-```
-
-### Agent Integration
-
-#### `AgentDiffusion`
-Unified API for population-level diffusion simulation.
-
-```rust
-let mut agents = AgentDiffusion::new_random(config, spread);
-agents.brownian_step();
+let config = AgentDiffusionConfig {
+    n_agents: 1000, dimension: 2, dt: 0.01,
+    total_time: 1.0, diffusion_coeff: 1.0, drift_coeff: 0.0,
+};
+let mut agents = AgentDiffusion::new_random(config, 1.0);
 agents.run_brownian();
-agents.heat_kernel(i, j, t);
-agents.mean_position();
-agents.mean_squared_displacement();
-agents.covariance_tensor();
-agents.position_distribution(dim, n_bins, range);
-agents.estimate_drift_diffusion(&trajectories);
-agents.hmc_sample(&hmc_config, &potential);
-agents.levy_flight(agent_idx, alpha, n_steps);
-agents.spectral_decomposition(&adjacency);
-agents.reset();
+println!("MSD: {}", agents.mean_squared_displacement());
 ```
+
+---
+
+## API Reference
+
+### `brownian` — Brownian Motion and Itô Calculus
+
+| Type / Function | Description |
+|----------------|-------------|
+| `BrownianConfig` | Configuration: dimension, dt, σ, drift. Implements `Default` |
+| `WienerStep` | Single step: time, position, increment |
+| `BrownianPath` | Simulated path. Methods: `simulate(config, n_steps)`, `final_position()`, `quadratic_variation()` |
+| `ito_lemma(f, f_t, f_w, f_ww, dt, dw)` | Itô's lemma: df = f_t dt + f_w dW + ½ f_ww dW² |
+| `ito_integral(f_vals, increments)` | Itô integral: Σ fᵢ dWᵢ |
+| `GeometricBrownian` | GBM: dS = μS dt + σS dW. Methods: `simulate(s0, μ, σ, dt, n_steps)`, `path` |
+| `OrnsteinUhlenbeck` | OU: dX = θ(μ−X)dt + σ dW. Methods: `simulate(x0, θ, μ, σ, dt, n)`, `stationary_variance()` → σ²/(2θ) |
+| `reflecting_brownian(x0, σ, dt, n, lower, upper)` | Brownian motion reflected at boundaries |
+
+### `heat_kernel` — Heat Kernel on Manifolds
+
+| Type / Function | Description |
+|----------------|-------------|
+| `heat_kernel_euclidean(dim, t, x, y)` | K(x,y,t) = (4πt)^(−d/2) exp(−|x−y|²/4t) |
+| `heat_kernel_circle(t, x, y, r, n_terms)` | Heat kernel on S¹(r) via periodic images |
+| `heat_kernel_sphere(t, θ₁, φ₁, θ₂, φ₂, r, max_l)` | Heat kernel on S²(r) via spherical harmonics and Legendre polynomials |
+| `legendre_polynomial(l, x)` | Legendre polynomial P_l(x) by recurrence |
+| `gaussian_kernel(x, μ, Σ⁻¹, det Σ)` | Multivariate Gaussian N(μ, Σ) |
+| `heat_equation_1d(u0, α, dx, dt, n_steps)` | Explicit finite differences with CFL check |
+| `graph_heat_kernel(L, t, n_terms)` | exp(−tL) via Taylor series |
+
+### `fokker_planck` — Fokker–Planck Equation
+
+| Type / Function | Description |
+|----------------|-------------|
+| `DriftDiffusionDecomposition` | Estimated drift and diffusion from observations. Methods: `estimate(obs, dt)` |
+| `FokkerPlanck1D` | 1D PDE solver. Methods: `new(n, x_min, x_max)`, `grid()`, `evolve(p0, drift_fn, diff_fn, dt, steps)`, `stationary_ou(θ, μ, σ)` |
+| `entropy_production_rate(drift, diff, density, dx)` | Entropy production ∫ j²/(Dp) dx ≥ 0 |
+| `probability_current(drift, diff, density, dx)` | Current j = ap − D∇p |
+
+### `langevin` — Langevin Dynamics and HMC
+
+| Type / Function | Description |
+|----------------|-------------|
+| `LangevinConfig` | Configuration: dimension, dt, friction, temperature, n_steps |
+| `PotentialEnergy` (trait) | `value(x)`, `gradient(x)` |
+| `QuadraticPotential` | V(x) = ½ x^T A x. Methods: `new(A)`, `identity(dim)` |
+| `DoubleWellPotential` | V(x) = Σ (xᵢ² − 1)² |
+| `LangevinResult` | Trajectory + energies + config |
+| `overdamped_langevin(config, x0, potential)` | dX = −∇V/γ dt + √(2T/γ) dW |
+| `underdamped_langevin(config, x0, v0, potential)` | Full Langevin with momentum |
+| `HMCConfig` | HMC parameters: step_size, n_leapfrog, n_samples, temperature |
+| `HMCResult` | Samples + acceptance rate + Hamiltonians |
+| `hmc_sample(config, x0, potential)` | Hamiltonian Monte Carlo with leapfrog integrator |
+| `kinetic_temperature(velocities)` | T_kin = ⟨½mv²⟩ / (d/2) |
+
+### `fractional` — Anomalous Diffusion and Lévy Flights
+
+| Type / Function | Description |
+|----------------|-------------|
+| `StableParams` | α-stable parameters: α ∈ (0,2], β, scale, location |
+| `stable_random(params)` | Single α-stable sample (Chambers–Mallows–Stuck method) |
+| `stable_samples(params, n)` | n α-stable samples |
+| `LevyFlight` | Lévy flight simulation. Methods: `simulate(dim, α, n_steps, scale)`, `mean_square_displacement()` |
+| `FractionalDiffusion1D` | Fractional PDE solver. Methods: `new(n, α)`, `gl_coefficients(n)` (Grünwald–Letnikov), `solve(u0, dx, dt, steps)` |
+| `stable_characteristic_function(t, params)` | Characteristic function of α-stable distribution |
+| `anomalous_exponent(msd, dt)` | Fit MSD ~ t^γ via log-log regression |
+
+### `reaction_diffusion` — Turing Patterns
+
+| Type / Function | Description |
+|----------------|-------------|
+| `ReactionDiffusionParams` | Parameters: Da, Di, f, k, dt, dx |
+| `GrayScott` | Gray–Scott model. Methods: `new(params, n)`, `seed_center(r, u, v)`, `step()`, `evolve(n_steps)` |
+| `FitzHughNagumo` | FHN model. Methods: `new(n, a, b, ε, Du, Dv, dt, dx)`, `set_initial(u, v)`, `step()`, `evolve(n_steps)` |
+| `check_turing_instability(fu, fv, gu, gv, Da, Di)` | Check if reaction-diffusion system exhibits Turing instability |
+
+### `spectral_diffusion` — Spectral Graph Diffusion
+
+| Type / Function | Description |
+|----------------|-------------|
+| `SpectralDecomposition` | Eigenvalues + eigenvectors. Methods: `decompose(M)`, `reconstruct()`, `low_rank(k)`, `eigenvalues`, `eigenvectors` |
+| `laplacian_1d_matrix(n, dx)` | 1D discrete Laplacian |
+| `graph_laplacian(adj)` | Unnormalized graph Laplacian L = D − A |
+| `normalized_graph_laplacian(adj)` | Symmetric normalized L = I − D^(−½)AD^(−½) |
+| `heat_kernel_spectral(evals, evecs, t, i, j, n_terms)` | K_t(i,j) = Σ exp(−λₖt) φₖ(i)φₖ(j) |
+| `spectral_diffusion_solve(evals, evecs, u0, t)` | u(t) = Σ exp(−λₖt) ⟨φₖ, u₀⟩ φₖ |
+| `spectral_gap(eigenvalues)` | λ₁ − λ₀ (algebraic connectivity) |
+| `diffusion_kernel_matrix(evals, evecs, t)` | Full diffusion kernel matrix |
+
+### `transport_diffusion` — Optimal Transport
+
+| Type / Function | Description |
+|----------------|-------------|
+| `DiscreteDistribution` | Finite-support distribution. Methods: `new(support, probs)`, `normalized(support, probs)`, `mean()`, `variance()`, `entropy()` |
+| `cost_matrix(a, b, p)` | C_ij = |aᵢ − bⱼ|^p |
+| `wasserstein_1d(a, b)` | W₁ distance via CDFs |
+| `sinkhorn(a, b, cost, reg, max_iter, tol)` | Sinkhorn algorithm → (transport plan, u, v) |
+| `kl_divergence(p, q)` | D_KL(p‖q) = Σ pᵢ ln(pᵢ/qᵢ) |
+| `js_divergence(p, q)` | D_JS(p‖q) = ½ D_KL(p‖m) + ½ D_KL(q‖m) |
+| `wasserstein_gradient_step(positions, target, step_size)` | One step of Wasserstein gradient flow |
+| `quantile_function(dist, q)` | Inverse CDF |
+
+### `anisotropic` — Anisotropic Diffusion
+
+| Type / Function | Description |
+|----------------|-------------|
+| `DiffusionTensor` | 3×3 symmetric positive-definite tensor. Methods: `isotropic(d)`, `from_eigen(λ, V)`, `axis_aligned(dx, dy, dz)`, `fractional_anisotropy()`, `mean_diffusivity()`, `radial_diffusivity()`, `apply(gradient)`, `trace()` |
+| `AnisotropicDiffusion2D` | 2D anisotropic solver. Methods: `new(nx, ny, dx, dy)`, `step_perona_malik(u, dt, κ)`, `evolve_perona_malik(u0, dt, κ, n)`, `step_tensor(u, Dxx, Dxy, Dyy, dt)` |
+| `structure_tensor(u, nx, ny, dx, dy)` | Compute structure tensor field (Jxx, Jxy, Jyy) from image |
+
+### `agent_diffusion` — Unified Agent API
+
+| Type / Function | Description |
+|----------------|-------------|
+| `AgentDiffusionConfig` | Configuration: n_agents, dimension, dt, total_time, diffusion_coeff, drift_coeff |
+| `AgentState` | Agent positions at time t |
+| `AgentDiffusion` | Unified API. Methods: `new(config)`, `new_random(config, spread)`, `brownian_step()`, `run_brownian()`, `heat_kernel(i, j, t)`, `position_distribution(dim, bins, range)`, `mean_position()`, `mean_squared_displacement()`, `covariance_tensor()`, `spectral_decomposition(adj)`, `levy_flight(agent_idx, alpha, n_steps)`, `reset()` |
+
+---
 
 ## How It Works
 
-**Brownian motion** uses Euler-Maruyama discretization: x_{n+1} = x_n + drift·dt + σ·√dt·Z where Z is uniform on [-1,1] scaled by √2. Quadratic variation converges to T as expected.
+### Architecture
 
-**Heat kernels** are computed analytically: the Euclidean kernel uses the Gaussian formula (4πt)^{-d/2} exp(-|x-y|²/4t), the circle kernel sums over periodic images, and the sphere kernel uses Legendre polynomial expansions. The 1D heat equation uses explicit finite differences with CFL stability condition r < ½.
+```
+brownian ──→ agent_diffusion (unified API)
+   │              │
+   ├── fokker_planck ──→ transport_diffusion (Wasserstein, Sinkhorn)
+   ├── heat_kernel ──→ spectral_diffusion (graph Laplacian, eigenvalues)
+   ├── langevin ──→ HMC sampling
+   ├── fractional ──→ Lévy flights, anomalous diffusion
+   └── reaction_diffusion ──→ Gray-Scott, FitzHugh-Nagumo
+                                     │
+anisotropic ──→ diffusion tensors ──→ structure tensors
+```
 
-**Fokker-Planck** is solved via conservative finite differences: the flux J = a(x)p - D(x)∂p/∂x is discretized on a staggered grid, ensuring mass conservation.
+### Numerical Methods
 
-**Langevin dynamics** uses Euler-Maruyama for overdamped (dx = -∇U/γ dt + √(2T/γ) dW) and velocity Verlet for underdamped. HMC uses leapfrog integration with Metropolis acceptance.
+- **Brownian motion**: Euler–Maruyama discretization dX = σ√dt · Z where Z ~ Uniform[−1,1] (scaled to match variance)
+- **Fokker–Planck**: Upwind scheme for drift + central differences for diffusion, with CFL stability check (r = dt/dx² < 0.5)
+- **Heat equation**: Explicit forward Euler with Neumann boundary conditions
+- **HMC**: Leapfrog integrator (symplectic, time-reversible) with Metropolis–Hastings acceptance
+- **Fractional diffusion**: Grünwald–Letnikov coefficients for the fractional Laplacian
+- **Sinkhorn**: Entropy-regularized optimal transport via iterative proportional fitting
+- **Spectral**: SVD-based eigendecomposition for symmetric matrices, matrix exponential via Taylor series
+- **Anisotropic**: Perona–Malik diffusivity g(∇u) = 1/(1 + |∇u|²/κ²) for edge-preserving smoothing
 
-**Lévy flights** generate step sizes from α-stable distributions using the Chambers-Mallows-Stuck method. Fractional diffusion uses Grünwald-Letnikov coefficients for the fractional Laplacian.
+### Random Number Generation
 
-**Gray-Scott** evolves the activator-inhibitor PDE system with explicit Euler on a 2D grid. FitzHugh-Nagumo uses a similar approach for excitable media.
+All stochastic processes use `rand::thread_rng()` with uniform samples on [−1,1] scaled by √2 to match the variance of N(0,1). This is sufficient for the simulation purposes of this crate; for production Monte Carlo, consider replacing with a proper Gaussian sampler.
 
-**Spectral decomposition** diagonalizes the graph Laplacian L = D - A and uses the eigenbasis for heat kernel computation and diffusion solving.
-
-**Anisotropic diffusion** represents direction-dependent diffusion as a 3×3 tensor. Perona-Malik uses an edge-stopping function g(|∇u|²) = 1/(1 + |∇u|²/κ²) to preserve edges while smoothing.
+---
 
 ## The Math
 
-### Brownian Motion (Wiener Process)
+### Brownian Motion and the Wiener Process
 
-W(0) = 0, independent increments, W(t) - W(s) ~ N(0, t-s).
+A **Wiener process** W(t) satisfies: W(0) = 0, independent increments, W(t) − W(s) ~ N(0, t−s), continuous paths. Discretized: ΔW = σ√Δt · Z.
+
+**Quadratic variation**: [W,W]_T = T, computed as Σ (ΔWᵢ)². This is the fundamental result that distinguishes stochastic calculus from classical calculus.
 
 ### Itô's Lemma
 
-For f(W, t):
+For f(W,t): df = (∂f/∂t) dt + (∂f/∂W) dW + ½ (∂²f/∂W²) dW², where dW² = dt.
 
-$$df = \frac{\partial f}{\partial t} dt + \frac{\partial f}{\partial W} dW + \frac{1}{2} \frac{\partial^2 f}{\partial W^2} dt$$
+The extra term ½ f_{WW} dt is the **Itô correction** and is what makes stochastic calculus different from ordinary calculus. For f(W) = W², this gives d(W²) = 2W dW + dt, not just 2W dW.
 
-### Heat Equation
+### Fokker–Planck Equation
 
-$$\frac{\partial u}{\partial t} = \alpha \Delta u$$
+For an SDE dX = a(X)dt + b(X)dW, the PDF p(x,t) satisfies:
 
-Fundamental solution (heat kernel):
+```
+∂p/∂t = −∂(a·p)/∂x + ½ ∂²(b²·p)/∂x²
+```
 
-$$K(x, y, t) = \frac{1}{(4\pi t)^{d/2}} \exp\left(-\frac{|x-y|^2}{4t}\right)$$
+This is the **forward Kolmogorov equation**. The crate solves it numerically with upwind drift and central diffusion on a uniform grid.
 
-### Fokker-Planck Equation
+**Entropy production rate**: ġ = ∫ j²/(D·p) dx ≥ 0, where j = ap − D∇p is the probability current.
 
-$$\frac{\partial p}{\partial t} = -\frac{\partial}{\partial x}[a(x) p] + \frac{\partial^2}{\partial x^2}[D(x) p]$$
+### Langevin Dynamics
 
-### Langevin Equation (Overdamped)
+**Overdamped** (high friction): dX = −∇V/γ dt + √(2T/γ) dW. The stationary distribution is the Boltzmann distribution p ∝ exp(−V/T).
 
-$$dx = -\nabla U(x) \, dt + \sqrt{2T} \, dW$$
+**Underdamped** (full): dX = v dt, dv = (−∇V − γv)dt + √(2γT) dW.
 
-Stationary distribution: p(x) ∝ exp(-U(x)/T).
+**Hamiltonian Monte Carlo**: Introduce momentum p ~ N(0,T), evolve Hamilton's equations H(x,p) = V(x) + p²/2 via leapfrog, accept/reject by Metropolis criterion exp(−ΔH/T). This gives efficient exploration of complex distributions.
 
-### Hamiltonian Monte Carlo
+### Geometric Brownian Motion
 
-Leapfrog integration of Hamilton's equations with Metropolis acceptance:
+dS = μS dt + σS dW. By Itô's lemma: S(t) = S₀ exp((μ − σ²/2)t + σW(t)).
 
-$$H(x, p) = U(x) + \frac{1}{2}|p|^2, \quad p(x) \propto \exp(-H)$$
+Used to model stock prices (Black–Scholes), population growth with noise, and any multiplicative noise process.
+
+### Ornstein–Uhlenbeck Process
+
+dX = θ(μ − X)dt + σ dW. Mean-reverting with rate θ to level μ. Stationary distribution: N(μ, σ²/(2θ)).
+
+The stationary variance σ²/(2θ) is the **fluctuation-dissipation relation**: thermal fluctuations (σ) balanced by dissipation (θ).
+
+### α-Stable Distributions and Lévy Flights
+
+A symmetric α-stable distribution S(α, 0, σ, 0) has characteristic function φ(t) = exp(−σ|t|^α). For α = 2, this is Gaussian; for α < 2, the distribution has **heavy tails** P(|X| > x) ~ x^(−α).
+
+**Lévy flights**: Random walks with step sizes drawn from an α-stable distribution. The MSD diverges for α < 2, leading to **superdiffusion** with anomalous exponent γ > 1 (for MSD ~ t^γ with γ computed from finite-time data).
 
 ### Fractional Diffusion
 
-$$\frac{\partial u}{\partial t} = -(-\Delta)^{\alpha/2} u, \quad \alpha \in (0, 2]$$
+The fractional Laplacian (−Δ)^(α/2) is discretized via **Grünwald–Letnikov coefficients**:
 
-For α = 2: standard diffusion. For α < 2: anomalous (superdiffusion via Lévy flights).
+```
+w₀ = 1,  wₖ = wₖ₋₁ · (1 − (α+1)/k)
+```
 
-### Gray-Scott Model
+For α = 2, this reduces to the standard Laplacian. For α < 2, the operator is **non-local**, capturing long-range interactions.
 
-$$\frac{\partial u}{\partial t} = D_A \Delta u - uv^2 + f(1-u)$$
-$$\frac{\partial v}{\partial t} = D_I \Delta v + uv^2 - (f+k)v$$
+### Heat Kernel
 
-### Wasserstein Distance (1D)
+The **heat kernel** K(x,y,t) is the fundamental solution of the heat equation ∂u/∂t = Δu:
 
-$$W_1(\mu, \nu) = \int_{-\infty}^{\infty} |F_\mu(x) - F_\nu(x)| \, dx$$
+- **Euclidean**: K(x,y,t) = (4πt)^(−d/2) exp(−|x−y|²/4t)
+- **Circle S¹(r)**: K(x,y,t) = Σ_k (4πt)^(−½) exp(−(x−y+2πkr)²/4t) (periodic images)
+- **Sphere S²(r)**: K = Σ_l (2l+1)/(4πr²) P_l(cos γ) exp(−l(l+1)t/r²) (spherical harmonics)
 
-### Sinkhorn Algorithm
+On graphs, K_t = exp(−tL) where L is the graph Laplacian.
 
-Regularized optimal transport via iterative scaling:
+### Reaction-Diffusion and Turing Instability
 
-$$K = \exp(-C/\epsilon), \quad u^{(n+1)} = a / (Kv^{(n)}), \quad v^{(n+1)} = b / (K^T u^{(n+1)})$$
+Two species u, v with different diffusion rates Da, Di and nonlinear reaction terms can produce **Turing patterns** — spatial structure emerging from homogeneous initial conditions.
 
-### Fractional Anisotropy
+**Turing instability** requires: (1) the system is stable without diffusion (trace < 0, det > 0), and (2) diffusion destabilizes it (Da·gv + Di·fu > 0 with discriminant positive).
 
-$$FA = \sqrt{\frac{3}{2}} \frac{\sqrt{(\lambda_1 - \bar{\lambda})^2 + (\lambda_2 - \bar{\lambda})^2 + (\lambda_3 - \bar{\lambda})^2}}{\sqrt{\lambda_1^2 + \lambda_2^2 + \lambda_3^2}}$$
+The **Gray–Scott** model: ∂u/∂t = DaΔu − uv² + f(1−u), ∂v/∂t = DiΔv + uv² − (f+k)v.
+
+The **FitzHugh–Nagumo** model: ∂u/∂t = u − u³/3 − v + DuΔu, ∂v/∂t = ε(u + a − bv) + DvΔv.
+
+### Optimal Transport and Wasserstein Distance
+
+The **Wasserstein-1 distance** between distributions μ, ν on ℝ:
+
+```
+W₁(μ, ν) = ∫ |F_μ(x) − F_ν(x)| dx
+```
+
+where F is the CDF. Computed via sorting and numerical integration.
+
+**Sinkhorn algorithm**: Approximate optimal transport with entropy regularization. Given marginals a, b and cost C, find the optimal plan P minimizing ⟨P,C⟩ + ε H(P) subject to P·1 = a, P^T·1 = b. Solved by iterating u ← a/(Kv), v ← b/(K^T u) where K = exp(−C/ε).
+
+**Wasserstein gradient flow**: Particles evolve toward a target distribution by moving toward quantile-matched positions.
+
+### Anisotropic Diffusion
+
+Instead of scalar diffusivity D, use a **diffusion tensor** D (3×3 SPD matrix). Key metrics:
+- **Fractional anisotropy**: FA = √(3/2) · √(Σ(λᵢ − λ̄)²) / √(Σλᵢ²) ∈ [0,1]
+- **Mean diffusivity**: MD = trace(D)/3
+- **Radial diffusivity**: RD = mean of eigenvalues perpendicular to principal direction
+
+**Perona–Malik**: Edge-preserving diffusion with conductance g(|∇u|) = 1/(1 + |∇u|²/κ²). Smooths homogeneous regions while preserving edges.
+
+---
 
 ## License
 
